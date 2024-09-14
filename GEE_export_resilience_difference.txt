@@ -1,0 +1,203 @@
+var GPP = ee.Image("users/yanyu19980602/PF_NF/PF_NF_lamda_GPP"),
+    GPP_PML = ee.Image("users/yanyu19980602/PF_NF/PF_NF_lamda_GPP_PML"),
+    roi1 = ee.FeatureCollection("projects/ee-yanyu19980602-python/assets/25_pf31"),
+    roi2 = ee.FeatureCollection("projects/ee-yanyu19980602-python/assets/25_pfall"),
+    KNDVI = ee.Image("projects/ee-yanyu1998/assets/PF_NF_lamda_KNDVI"),
+    LAI = ee.Image("projects/ee-yanyu19980602-python/assets/PF_NF_lamda_LAI_QC"),
+    FPAR = ee.Image("projects/ee-yanyu19980602-python/assets/PF_NF_lamda_FPAR_QC"),
+    FPAR_AR1 = ee.Image("projects/ee-yanyu19980602-python/assets/PF_NF_AR1_FPAR"),
+    KNDVI_AR1 = ee.Image("projects/ee-yanyu19980602-python/assets/PF_NF_AR1_KNDVI"),
+    LAI_AR1 = ee.Image("projects/ee-yanyu19980602-python/assets/PF_NF_AR1_LAI"),
+    GPP_MODIS_AR1 = ee.Image("projects/ee-yanyu19980602-python/assets/PF_NF_AR1__GPP_MODIS"),
+    GPP_PML_AR1 = ee.Image("projects/ee-yanyu19980602-python/assets/PF_NF_AR1__GPP_PML");
+var bands_lambda1 = ["lambda_ac1_LAI","lambda_var_LAI"]
+var bands_lambda2 = ["lambda_ac1_GPP","lambda_var_GPP"]
+var bands_lambda3 = ["lambda_ac1_GPP_PML","lambda_var_GPP_PML"]
+var bands_lambda4 = ["lambda_ac1_KNDVI","lambda_var_KNDVI"]
+var bands_lambda5 = ["lambda_ac1_FPAR","lambda_var_FPAR"]
+
+var LAI = LAI.rename(bands_lambda1)
+var GPP = GPP.rename(bands_lambda2)
+var GPP_PML = GPP_PML.rename(bands_lambda3)
+var KNDVI = KNDVI.rename(bands_lambda4)
+var FPAR = FPAR.rename(bands_lambda5)
+
+// DI
+var dataset = ee.ImageCollection('IDAHO_EPSCOR/TERRACLIMATE')
+                  .filter(ee.Filter.date('2001-01-01', '2015-12-31'));
+var pet = dataset.select('pet').mean().multiply(0.1);
+var pre = dataset.select('pr').mean();
+
+var DI = pre.divide(pet).rename("DI_2001_2015")
+
+var all = LAI.addBands(GPP).addBands(GPP_PML).addBands(KNDVI).addBands(FPAR).addBands(DI).addBands(pet).addBands(pre)
+
+// the GFMD and Hassen forest map and the MODIS forest map
+var GFMD_2015 = ee.Image("users/youzhuo98/forest").rename("Forest_mana_type")
+
+var Hansen_forest_map = ee.Image("UMD/hansen/global_forest_change_2022_v1_10").select("treecover2000") 
+
+var HM_1km = Hansen_forest_map
+.reproject(GFMD_2015.projection())
+.reduceResolution({
+  reducer: ee.Reducer.mean(),
+  maxPixels: 1400,
+  bestEffort: true,
+}).gte(50).unmask(0).rename("Forest_2000");
+//Map.addLayer(HM_1km)
+
+var GFMD_2000 = GFMD_2015.updateMask(HM_1km)
+
+var NFs_2000 = GFMD_2000.eq(11).or(GFMD_2000.eq(20))
+
+var PFs_2000 = GFMD_2000.eq(31)
+
+///////////////////////////export
+var all_NF = all.updateMask(NFs_2000)
+var statistics = all_NF
+.reduceRegions({collection: roi1, reducer: ee.Reducer.mean(), scale: 1000})
+
+var polyOut = statistics.select(['.*'],null,false);
+
+Export.table.toDrive({
+  collection:polyOut,
+  description:'lambda_NF_25_pf31',
+  fileFormat: 'csv'
+});
+
+var all_PF = all.updateMask(PFs_2000)
+
+var statistics = all_PF
+.reduceRegions({collection: roi1, reducer: ee.Reducer.mean(), scale: 1000})
+
+var polyOut = statistics.select(['.*'],null,false);
+
+Export.table.toDrive({
+  collection:polyOut,
+  description:'lambda_PF_25_pf31',
+  fileFormat: 'csv'
+});
+
+///////////////////for the AR1 value
+var all = FPAR_AR1.addBands(KNDVI_AR1).addBands(GPP_MODIS_AR1)
+.addBands(GPP_PML_AR1).addBands(LAI_AR1).rename(["FPAR_AR1","KNDVI_AR1","GPP_MODIS_AR1","GPP_PML_AR1","LAI_AR1"]).updateMask(GFMD_2000)
+print(all)
+
+Export.image.toDrive({
+ image:all,
+  description: 'lambda_all',
+  folder: 'all', 
+  scale: 1000,
+  maxPixels: 1e13})   
+
+
+var all_NF = all.updateMask(NFs_2000)
+var statistics = all_NF
+.reduceRegions({collection: roi1, reducer: ee.Reducer.mean(), scale: 1000})
+
+var polyOut = statistics.select(['.*'],null,false);
+
+Export.table.toDrive({
+  collection:polyOut,
+  description:'AR1_NF_25_pf31',
+  fileFormat: 'csv'
+});
+
+var all_PF = all.updateMask(PFs_2000)
+
+var statistics = all_PF
+.reduceRegions({collection: roi1, reducer: ee.Reducer.mean(), scale: 1000})
+
+var polyOut = statistics.select(['.*'],null,false);
+
+Export.table.toDrive({
+  collection:polyOut,
+  description:'AR1_PF_25_pf31',
+  fileFormat: 'csv'
+});
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// the GFMD and Hassen forest map and the MODIS forest map
+var GFMD_2015 = ee.Image("users/youzhuo98/forest").rename("Forest_mana_type")
+
+var Hansen_forest_map = ee.Image("UMD/hansen/global_forest_change_2022_v1_10").select("treecover2000") 
+
+var HM_1km = Hansen_forest_map
+.reproject(GFMD_2015.projection())
+.reduceResolution({
+  reducer: ee.Reducer.mean(),
+  maxPixels: 1400,
+  bestEffort: true,
+}).gte(50).unmask(0).rename("Forest_2000");
+//Map.addLayer(HM_1km)
+
+var GFMD_2000 = GFMD_2015.updateMask(HM_1km)
+
+var NFs_2000 = GFMD_2000.eq(11).or(GFMD_2000.eq(20))
+
+var PFs_2000 = GFMD_2000.eq(31).or(GFMD_2000.eq(32)).or(GFMD_2000.eq(40)).or(GFMD_2000.eq(53))
+
+///////////////////////////export
+var all_NF = all.updateMask(NFs_2000)
+var statistics = all_NF
+.reduceRegions({collection: roi2, reducer: ee.Reducer.mean(), scale: 1000})
+
+var polyOut = statistics.select(['.*'],null,false);
+
+Export.table.toDrive({
+  collection:polyOut,
+  description:'lambda_NF_25_pfall',
+  fileFormat: 'csv'
+});
+
+var all_PF = all.updateMask(PFs_2000)
+
+var statistics = all_PF
+.reduceRegions({collection: roi2, reducer: ee.Reducer.mean(), scale: 1000})
+
+var polyOut = statistics.select(['.*'],null,false);
+
+Export.table.toDrive({
+  collection:polyOut,
+  description:'lambda_PF_25_pfall',
+  fileFormat: 'csv'
+});
+
+///////////////////for the AR1 value
+var all = FPAR_AR1.addBands(KNDVI_AR1).addBands(GPP_MODIS_AR1)
+.addBands(GPP_PML_AR1).addBands(LAI_AR1).rename(["FPAR_AR1","KNDVI_AR1","GPP_MODIS_AR1","GPP_PML_AR1","LAI_AR1"]).updateMask(GFMD_2000)
+print(all)
+
+Export.image.toDrive({
+ image:all,
+  description: 'lambda_all',
+  folder: 'all', 
+  scale: 1000,
+  maxPixels: 1e13})   
+
+
+var all_NF = all.updateMask(NFs_2000)
+var statistics = all_NF
+.reduceRegions({collection: roi2, reducer: ee.Reducer.mean(), scale: 1000})
+
+var polyOut = statistics.select(['.*'],null,false);
+
+Export.table.toDrive({
+  collection:polyOut,
+  description:'AR1_NF_25_pfall',
+  fileFormat: 'csv'
+});
+
+var all_PF = all.updateMask(PFs_2000)
+
+var statistics = all_PF
+.reduceRegions({collection: roi2, reducer: ee.Reducer.mean(), scale: 1000})
+
+var polyOut = statistics.select(['.*'],null,false);
+
+Export.table.toDrive({
+  collection:polyOut,
+  description:'AR1_PF_25_pfall',
+  fileFormat: 'csv'
+});
+

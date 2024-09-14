@@ -1,0 +1,406 @@
+var i = "_LAI_Z"
+// the GFMD and Hassen forest map and the MODIS forest map
+var GFMD_2015 = ee.Image("users/youzhuo98/forest").rename("Forest_mana_type")
+
+var Hansen_forest_map = ee.Image("UMD/hansen/global_forest_change_2022_v1_10").select("treecover2000") 
+
+var HM_1km = Hansen_forest_map
+.reproject(GFMD_2015.projection())
+.reduceResolution({
+  reducer: ee.Reducer.mean(),
+  maxPixels: 1400,
+  bestEffort: true,
+}).gte(50).unmask(0).rename("Forest_2000");
+//Map.addLayer(HM_1km)
+
+var GFMD_2000 = GFMD_2015.updateMask(HM_1km)
+
+////////////////////////////////////////////
+var mask_image_bit = function (imagecol,maskband,bit) {
+
+function mask_(image) {
+  // Bits 3 and 5 are cloud shadow and cloud, respectively.
+  var cloudShadowBitMask = (1 << bit);
+  // Get the pixel QA band.
+  var qa = image.select(maskband);
+  // Both flags should be set to zero, indicating clear conditions.
+  var mask = qa.bitwiseAnd(cloudShadowBitMask).eq(0)
+  return image.updateMask(mask);
+}
+
+return imagecol.map(mask_)
+}
+//
+var reproject_mean = function (image){
+var image =  image.reproject({
+    crs: 'EPSG:4326',
+    scale: 1000
+  }) //questions:about the reproject and resample
+return image
+}
+//
+
+function bitwiseExtract(value, fromBit, toBit) {
+ if (toBit === undefined)
+ toBit = fromBit
+ var maskSize = ee.Number(1).add(toBit).subtract(fromBit)
+ var mask = ee.Number(1).leftShift(maskSize).subtract(1)
+ return value.rightShift(fromBit).bitwiseAnd(mask)
+}
+//
+var stratdate = "2001-01-01"
+var enddate = "2015-12-31"
+
+var NDVI_EVI_1 = ee.ImageCollection("MODIS/061/MOD15A2H").filterDate(stratdate,enddate)
+
+var NDVI_EVI_2 = ee.ImageCollection("MODIS/061/MYD15A2H").filterDate(stratdate,enddate)
+
+var EVI = NDVI_EVI_1.merge(NDVI_EVI_2).map(reproject_mean)
+
+/*var EVI = EVI.map(function(image){
+var qa = image.select('FparLai_QC')
+var good = bitwiseExtract(qa, 0) // returns 0 for good quality
+return image.updateMask(good.not()) // needs to be inverted to mask pixels with bad quality
+})*/
+
+print(EVI)
+//////////////////////////////////////
+var rename_new = function(imagecol,odd,newname){
+  
+  var rn = function(image){
+    return image.select(odd).rename(newname)
+  }
+  
+  return imagecol.map(rn)
+}
+
+/////////////////////deseason
+//monthly median datasets
+var startyear = 2001; 
+var endyear = 2015; 
+
+var startmonth = 1;
+var endmonth= 12;
+
+var startdate = ee.Date.fromYMD(startyear, startmonth, 1);
+var enddate = ee.Date.fromYMD(endyear+1 , endmonth, 1);
+var years = ee.List.sequence(startyear, endyear);
+var months = ee.List.sequence(startmonth,endmonth);
+//
+var EVI_MODIS = ee.ImageCollection.fromImages(
+  years.map(function (y) {
+    return months.map(function(m) {
+    // var n=m+1;
+     //print(m)
+      var w = EVI.filter(ee.Filter.calendarRange(y, y, 'year'))
+                    .filter(ee.Filter.calendarRange(m, m, 'month'))
+                    .max().select("Lai_500m").multiply(0.01).rename("LAI");
+      
+      return w.set('year', y)
+              .set('month', m)
+              .set('system:time_start', ee.Date.fromYMD(y, m, 1).millis());
+    });
+  }).flatten()
+);
+
+var EVI_Zscores = EVI_MODIS.map(function(image) {
+  var m = image.get("month")
+  
+  var img_mean = EVI_MODIS.filter(ee.Filter.eq('month', m)).mean()
+  var img_std = EVI_MODIS.filter(ee.Filter.eq('month', m)).reduce(ee.Reducer.stdDev());
+  
+  var img_A = image.subtract(img_mean)
+  var img_Z = img_A.divide(img_std).rename("LAI_Z")
+ 
+  return img_Z.copyProperties(image,['system:time_start','year','month'])
+})
+/////////////////////////////////////////////climate
+/////////////////////////////////////////////////////////////Terraclimate
+var Terraclimate = ee.ImageCollection("IDAHO_EPSCOR/TERRACLIMATE").filterDate("2001-01-01","2021-12-31")
+
+var Temp = Terraclimate.map(function(image) {
+  return image.addBands(
+    image.expression('(a1+b1)/2', {
+      a1: image.select('tmmn'),
+      b1: image.select('tmmx'),
+    }).rename('Temp'));
+});
+
+var bandsName_climae = ["vpd","soil","pr","Temp","tmmn","tmmx","vs","srad","pet","pdsi"]
+var climate_Terra = Temp.select(bandsName_climae)
+
+//
+var startyear = 2001; 
+var endyear = 2015; 
+
+var startmonth = 1;
+var endmonth= 12;
+
+var startdate = ee.Date.fromYMD(startyear, startmonth, 1);
+var enddate = ee.Date.fromYMD(endyear+1 , endmonth, 1);
+var years = ee.List.sequence(startyear, endyear);
+var months = ee.List.sequence(startmonth,endmonth);
+//
+var climate_Terra_month = ee.ImageCollection.fromImages(
+  years.map(function (y) {
+    return months.map(function(m) {
+    // var n=m+1;
+     //print(m)
+      var w = climate_Terra.filter(ee.Filter.calendarRange(y, y, 'year'))
+                    .filter(ee.Filter.calendarRange(m, m, 'month'))
+                    .mean();
+                    
+      return w.set('year', y)
+              .set('month', m)
+              .set('system:time_start', ee.Date.fromYMD(y, m, 1).millis());
+    });
+  }).flatten()
+);
+//
+var PDSI = climate_Terra_month.select("pdsi").map(function (img){
+  return img.multiply(0.01).copyProperties(img,["year","month","system:time_start"])
+})
+//
+var climate_Terra_month = climate_Terra_month.select(["vpd","soil","pr","Temp","tmmn","tmmx","vs","srad","pet"])
+//
+var Terraclimate_Zscores = climate_Terra_month.map(function(image) {
+  var m = image.get("month")
+  
+  var img_mean = climate_Terra_month.filter(ee.Filter.eq('month', m)).mean()
+  var img_std = climate_Terra_month.filter(ee.Filter.eq('month', m)).reduce(ee.Reducer.stdDev());
+  
+  var img_A = image.subtract(img_mean)
+  var img_Z = img_A.divide(img_std)
+ 
+  return img_Z.copyProperties(image,['system:time_start','year','month'])
+})
+
+///////////////////////////////////////////
+var filtereq = ee.Filter.equals({
+  leftField: 'system:time_start',
+  rightField: 'system:time_start',
+});
+var join = ee.Join.saveFirst({
+    matchKey: 'match',
+});
+//
+var ALL1 = ee.ImageCollection(join.apply(EVI_Zscores,Terraclimate_Zscores,filtereq))
+  .map(function(image) {
+    return image.addBands(image.get('match'));
+  });
+
+var ALL1 = ee.ImageCollection(join.apply(ALL1,PDSI,filtereq))
+  .map(function(image) {
+    return image.addBands(image.get('match'));
+  });
+  
+print(ALL1) 
+//////////////////////
+////////////////
+var corr = function(joined_collection,band1,band2){
+  var coll=ee.ImageCollection(joined_collection);
+  var corr_img=coll.select([band1, band2])
+  .reduce(ee.Reducer.pearsonsCorrelation());
+  var te=corr_img.select("correlation");
+  var test=te;
+  return test;};
+
+var corp=function(joined_collection,band1,band2){
+  var coll=ee.ImageCollection(joined_collection);
+  var corr_img=coll.select([band1, band2])
+  .reduce(ee.Reducer.pearsonsCorrelation());
+  var te=corr_img.select('p-value');
+  var test=te;
+  return test;};
+
+var slope = function(joined_collection,band1,band2){
+  var coll=ee.ImageCollection(joined_collection);
+  var corr_img=coll.select([band1, band2])
+  .reduce(ee.Reducer.robustLinearRegression({numX: 1, numY: 1}));
+  
+  var  bandNames = [[band1], // 0-axis variation.
+                 [band2]];
+                 
+  var te= corr_img.select(['coefficients']).arrayFlatten(bandNames)
+  var test=te;
+  return test;};
+//////////////////////////
+
+var slope_EVI_soil = slope(ALL1,"soil","LAI_Z").updateMask(GFMD_2000).rename("SM_LAI_Z")
+var slope_EVI_pr = slope(ALL1,"pr","LAI_Z").updateMask(GFMD_2000).rename("Pre_LAI_Z")
+var slope_EVI_Temp = slope(ALL1,"Temp","LAI_Z").updateMask(GFMD_2000).rename("Temp_LAI_Z")
+var slope_EVI_pet = slope(ALL1,"pet","LAI_Z").updateMask(GFMD_2000).rename("PET_LAI_Z")
+var slope_EVI_pdsi = slope(ALL1,"pdsi","LAI_Z").updateMask(GFMD_2000).rename("PDSI_LAI_Z")
+
+var corr_EVI_soil = corr(ALL1,"soil","LAI_Z").updateMask(GFMD_2000).rename("SM_LAI_Z")
+var corr_EVI_pr = corr(ALL1,"pr","LAI_Z").updateMask(GFMD_2000).rename("Pre_LAI_Z")
+var corr_EVI_Temp = corr(ALL1,"Temp","LAI_Z").updateMask(GFMD_2000).rename("Temp_LAI_Z")
+var corr_EVI_pet = corr(ALL1,"pet","LAI_Z").updateMask(GFMD_2000).rename("PET_LAI_Z")
+var corr_EVI_pdsi = corr(ALL1,"pdsi","LAI_Z").updateMask(GFMD_2000).rename("PDSI_LAI_Z")
+
+var corp_EVI_soil = corp(ALL1,"soil","LAI_Z").updateMask(GFMD_2000).lte(0.05).rename("SM_LAI_Z")
+var corp_EVI_pr = corp(ALL1,"pr","LAI_Z").updateMask(GFMD_2000).lte(0.05).rename("Pre_LAI_Z")
+var corp_EVI_Temp = corp(ALL1,"Temp","LAI_Z").updateMask(GFMD_2000).lte(0.05).rename("Temp_LAI_Z")
+var corp_EVI_pet = corp(ALL1,"pet","LAI_Z").updateMask(GFMD_2000).lte(0.05).rename("PET_LAI_Z")
+var corp_EVI_pdsi = corp(ALL1,"pdsi","LAI_Z").updateMask(GFMD_2000).lte(0.05).rename("PDSI_LAI_Z")
+
+var slope = slope_EVI_soil.addBands(slope_EVI_pr).addBands(slope_EVI_Temp).addBands(slope_EVI_pet).addBands(slope_EVI_pdsi)
+
+var corr = corr_EVI_soil.addBands(corr_EVI_pr).addBands(corr_EVI_Temp).addBands(corr_EVI_pet).addBands(corr_EVI_pdsi)
+
+var corp = corp_EVI_soil.addBands(corp_EVI_pr).addBands(corp_EVI_Temp).addBands(corp_EVI_pet).addBands(corp_EVI_pdsi)
+
+
+Export.image.toAsset({
+  image: slope,
+  description: "slope_PF_NF"+i,
+   assetId: 'slope_PF_NF'+i,  // <> modify these
+  scale: 1000,
+  maxPixels: 1e13
+});
+
+Export.image.toAsset({
+  image: corr,
+  description: "corr_PF_NF"+i,
+   assetId: 'corr_sensi_PF_NF'+i,  // <> modify these
+  scale: 1000,
+  maxPixels: 1e13
+}); 
+  
+Export.image.toAsset({
+  image: corp,
+  description: "corp_PF_NF"+i,
+   assetId: 'corp_PF_NF'+i,  // <> modify these
+  scale: 1000,
+  maxPixels: 1e13
+});   
+
+print(ALL1)
+/////////////////////////////////////the slope annual moving windows
+var band = ["sensi_2003","sensi_2004","sensi_2005","sensi_2006","sensi_2007","sensi_2008",
+"sensi_2009","sensi_2010","sensi_2011","sensi_2012","sensi_2013"]
+
+
+var slope = function(joined_collection,band1,band2){
+  var coll=ee.ImageCollection(joined_collection);
+  var corr_img=coll.select([band1, band2])
+  .reduce(ee.Reducer.robustLinearRegression({numX: 1, numY: 1}));
+  
+  var  bandNames = [[band1], // 0-axis variation.
+                 [band2]];
+                 
+  var te= corr_img.select(['coefficients']).arrayFlatten(bandNames)
+  var test=te;
+  return test;};
+  
+var years = ee.List.sequence(2003,2013)
+var windowSize = 2;
+/////////////////////1
+var moving_slope = function reduceFits(t){
+  var date = ee.Date.fromYMD(t,1,1);
+   
+  var data = ALL1.filterDate(date.advance(-windowSize,'year'),date.advance(windowSize,'year'))
+  
+  var result = slope(data,"pr","LAI_Z").rename("Pre_LAI").updateMask(GFMD_2000)
+  
+  return result.set('system:time_start',date.millis())
+              .set("year", t); 
+}
+
+var Pr_LAI = ee.ImageCollection(years.map(moving_slope)).toBands().rename(band)
+print(Pr_LAI)
+Export.image.toAsset({
+  image: Pr_LAI,
+  description: "TS_Pr_LAI_PF_NF",
+   assetId: 'TS_Pr_LAI_PF_NF',  // <> modify these
+  scale: 1000,
+  maxPixels: 1e13
+}); 
+
+/////////////////////2
+var moving_slope = function reduceFits(t){
+  var date = ee.Date.fromYMD(t,1,1);
+   
+  var data = ALL1.filterDate(date.advance(-windowSize,'year'),date.advance(windowSize,'year'))
+  
+  var result = slope(data,"Temp","LAI_Z").rename("Temp_LAI").updateMask(GFMD_2000)
+  
+  return result.set('system:time_start',date.millis())
+              .set("year", t); 
+}
+
+var Temp_LAI = ee.ImageCollection(years.map(moving_slope)).toBands().rename(band)
+print(Temp_LAI)
+Export.image.toAsset({
+  image: Temp_LAI,
+  description: "TS_Temp_LAI_PF_NF",
+   assetId: 'TS_Temp_LAI_PF_NF',  // <> modify these
+  scale: 1000,
+  maxPixels: 1e13
+}); 
+
+/////////////////////3
+var moving_slope = function reduceFits(t){
+  var date = ee.Date.fromYMD(t,1,1);
+   
+  var data = ALL1.filterDate(date.advance(-windowSize,'year'),date.advance(windowSize,'year'))
+  
+  var result = slope(data,"pdsi","LAI_Z").rename("pdsi_LAI").updateMask(GFMD_2000)
+  
+  return result.set('system:time_start',date.millis())
+              .set("year", t); 
+}
+
+var pdsi_LAI = ee.ImageCollection(years.map(moving_slope)).toBands().rename(band)
+
+Export.image.toAsset({
+  image: pdsi_LAI,
+  description: "TS_pdsi_LAI_PF_NF",
+   assetId: 'TS_pdsi_LAI_PF_NF',  // <> modify these
+  scale: 1000,
+  maxPixels: 1e13
+}); 
+
+/////////////////////4
+var moving_slope = function reduceFits(t){
+  var date = ee.Date.fromYMD(t,1,1);
+   
+  var data = ALL1.filterDate(date.advance(-windowSize,'year'),date.advance(windowSize,'year'))
+  
+  var result = slope(data,"soil","LAI_Z").rename("soil_LAI").updateMask(GFMD_2000)
+  
+  return result.set('system:time_start',date.millis())
+              .set("year", t); 
+}
+
+var soil_LAI = ee.ImageCollection(years.map(moving_slope)).toBands().rename(band)
+
+Export.image.toAsset({
+  image: soil_LAI,
+  description: "TS_soil_LAI_PF_NF",
+   assetId: 'TS_soil_LAI_PF_NF',  // <> modify these
+  scale: 1000,
+  maxPixels: 1e13
+}); 
+
+/////////////////////5
+var moving_slope = function reduceFits(t){
+  var date = ee.Date.fromYMD(t,1,1);
+   
+  var data = ALL1.filterDate(date.advance(-windowSize,'year'),date.advance(windowSize,'year'))
+  
+  var result = slope(data,"pet","LAI_Z").rename("pet_LAI").updateMask(GFMD_2000)
+  
+  return result.set('system:time_start',date.millis())
+              .set("year", t); 
+}
+
+var pet_LAI = ee.ImageCollection(years.map(moving_slope)).toBands().rename(band)
+
+Export.image.toAsset({
+  image: pet_LAI,
+  description: "TS_pet_LAI_PF_NF",
+   assetId: 'TS_pet_LAI_PF_NF',  // <> modify these
+  scale: 1000,
+  maxPixels: 1e13
+}); 

@@ -1,0 +1,314 @@
+var lambda_TS_LAI = ee.Image("projects/ee-yanyu19980602-python/assets/PF_NF_lamda_LAI_time_series"),
+    lambda_TS_FPAR = ee.Image("projects/ee-yanyu19980602-python/assets/PF_NF_lamda_FPAR_time_series"),
+    lambda_TS_GPP_PML = ee.Image("projects/ee-yanyu19980602-python/assets/PF_NF_lamda_GPP_PML_time_series"),
+    lambda_TS_KNDVI = ee.Image("projects/ee-yanyu19980602-python/assets/PF_NF_lamda_KNDVI_time_series"),
+    lambda_TS_GPP_MODIS = ee.Image("projects/ee-yanyu19980602-python/assets/PF_NF_lamda__GPP_MODIS_time_series");
+var roi1 = ee.FeatureCollection("projects/ee-yanyu19980602-python/assets/25_pf31"),
+    roi2 = ee.FeatureCollection("projects/ee-yanyu19980602-python/assets/25_pfall")
+// DI
+var dataset = ee.ImageCollection('IDAHO_EPSCOR/TERRACLIMATE')
+                  .filter(ee.Filter.date('2001-01-01', '2015-12-31'));
+var pet = dataset.select('pet').mean().multiply(0.1);
+var pre = dataset.select('pr').mean();
+
+var DI = pre.divide(pet).rename("DI_2001_2015") 
+
+var all = lambda_TS_LAI.addBands(DI)
+
+// the GFMD and Hassen forest map and the MODIS forest map
+var GFMD_2015 = ee.Image("users/youzhuo98/forest").rename("Forest_mana_type")
+
+var Hansen_forest_map = ee.Image("UMD/hansen/global_forest_change_2022_v1_10").select("treecover2000") 
+
+var HM_1km = Hansen_forest_map
+.reproject(GFMD_2015.projection())
+.reduceResolution({
+  reducer: ee.Reducer.mean(),
+  maxPixels: 1400,
+  bestEffort: true,
+}).gte(50).unmask(0).rename("Forest_2000");
+//Map.addLayer(HM_1km)
+
+var GFMD_2000 = GFMD_2015.updateMask(HM_1km)
+
+var NFs_2000 = GFMD_2000.eq(11).or(GFMD_2000.eq(20))
+
+var PFs_2000 = GFMD_2000.eq(31)
+
+///////////////////////////export
+var all_NF = all.updateMask(NFs_2000)
+var statistics = all_NF
+.reduceRegions({collection: roi1, reducer: ee.Reducer.mean(), scale: 1000})
+
+var polyOut = statistics.select(['.*'],null,false);
+
+Export.table.toDrive({
+  collection:polyOut,
+  description:'lambda_NF_25_pf31_TS_LAI',
+  fileFormat: 'csv'
+});
+
+var all_PF = all.updateMask(PFs_2000)
+
+var statistics = all_PF
+.reduceRegions({collection: roi1, reducer: ee.Reducer.mean(), scale: 1000})
+
+var polyOut = statistics.select(['.*'],null,false);
+
+Export.table.toDrive({
+  collection:polyOut,
+  description:'lambda_PF_25_pf31_TS_LAI',
+  fileFormat: 'csv'
+});
+///////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////
+var roi1 = ee.FeatureCollection("projects/ee-yanyu19980602-python/assets/25_pf31"),
+    roi2 = ee.FeatureCollection("projects/ee-yanyu19980602-python/assets/25_pfall")
+// DI
+var dataset = ee.ImageCollection('IDAHO_EPSCOR/TERRACLIMATE')
+                  .filter(ee.Filter.date('2001-01-01', '2015-12-31'));
+var pet = dataset.select('pet').mean().multiply(0.1);
+var pre = dataset.select('pr').mean();
+
+var DI = pre.divide(pet).rename("DI_2001_2015") 
+
+var all = lambda_TS_FPAR.addBands(DI)
+
+// the GFMD and Hassen forest map and the MODIS forest map
+var GFMD_2015 = ee.Image("users/youzhuo98/forest").rename("Forest_mana_type")
+
+var Hansen_forest_map = ee.Image("UMD/hansen/global_forest_change_2022_v1_10").select("treecover2000") 
+
+var HM_1km = Hansen_forest_map
+.reproject(GFMD_2015.projection())
+.reduceResolution({
+  reducer: ee.Reducer.mean(),
+  maxPixels: 1400,
+  bestEffort: true,
+}).gte(50).unmask(0).rename("Forest_2000");
+//Map.addLayer(HM_1km)
+
+var GFMD_2000 = GFMD_2015.updateMask(HM_1km)
+
+var NFs_2000 = GFMD_2000.eq(11).or(GFMD_2000.eq(20))
+
+var PFs_2000 = GFMD_2000.eq(31)
+
+///////////////////////////export
+var all_NF = all.updateMask(NFs_2000)
+var statistics = all_NF
+.reduceRegions({collection: roi1, reducer: ee.Reducer.mean(), scale: 1000})
+
+var polyOut = statistics.select(['.*'],null,false);
+
+Export.table.toDrive({
+  collection:polyOut,
+  description:'lambda_NF_25_pf31_TS_FPAR',
+  fileFormat: 'csv'
+});
+
+var all_PF = all.updateMask(PFs_2000)
+
+var statistics = all_PF
+.reduceRegions({collection: roi1, reducer: ee.Reducer.mean(), scale: 1000})
+
+var polyOut = statistics.select(['.*'],null,false);
+
+Export.table.toDrive({
+  collection:polyOut,
+  description:'lambda_PF_25_pf31_TS_FPAR',
+  fileFormat: 'csv'
+});
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////
+var roi1 = ee.FeatureCollection("projects/ee-yanyu19980602-python/assets/25_pf31"),
+    roi2 = ee.FeatureCollection("projects/ee-yanyu19980602-python/assets/25_pfall")
+// DI
+var dataset = ee.ImageCollection('IDAHO_EPSCOR/TERRACLIMATE')
+                  .filter(ee.Filter.date('2001-01-01', '2015-12-31'));
+var pet = dataset.select('pet').mean().multiply(0.1);
+var pre = dataset.select('pr').mean();
+
+var DI = pre.divide(pet).rename("DI_2001_2015") 
+
+var all = lambda_TS_GPP_PML.addBands(DI)
+
+// the GFMD and Hassen forest map and the MODIS forest map
+var GFMD_2015 = ee.Image("users/youzhuo98/forest").rename("Forest_mana_type")
+
+var Hansen_forest_map = ee.Image("UMD/hansen/global_forest_change_2022_v1_10").select("treecover2000") 
+
+var HM_1km = Hansen_forest_map
+.reproject(GFMD_2015.projection())
+.reduceResolution({
+  reducer: ee.Reducer.mean(),
+  maxPixels: 1400,
+  bestEffort: true,
+}).gte(50).unmask(0).rename("Forest_2000");
+//Map.addLayer(HM_1km)
+
+var GFMD_2000 = GFMD_2015.updateMask(HM_1km)
+
+var NFs_2000 = GFMD_2000.eq(11).or(GFMD_2000.eq(20))
+
+var PFs_2000 = GFMD_2000.eq(31)
+
+///////////////////////////export
+var all_NF = all.updateMask(NFs_2000)
+var statistics = all_NF
+.reduceRegions({collection: roi1, reducer: ee.Reducer.mean(), scale: 1000})
+
+var polyOut = statistics.select(['.*'],null,false);
+
+Export.table.toDrive({
+  collection:polyOut,
+  description:'lambda_NF_25_pf31_TS_GPP_PML',
+  fileFormat: 'csv'
+});
+
+var all_PF = all.updateMask(PFs_2000)
+
+var statistics = all_PF
+.reduceRegions({collection: roi1, reducer: ee.Reducer.mean(), scale: 1000})
+
+var polyOut = statistics.select(['.*'],null,false);
+
+Export.table.toDrive({
+  collection:polyOut,
+  description:'lambda_PF_25_pf31_TS_GPP_PML',
+  fileFormat: 'csv'
+});
+
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////
+var roi1 = ee.FeatureCollection("projects/ee-yanyu19980602-python/assets/25_pf31"),
+    roi2 = ee.FeatureCollection("projects/ee-yanyu19980602-python/assets/25_pfall")
+// DI
+var dataset = ee.ImageCollection('IDAHO_EPSCOR/TERRACLIMATE')
+                  .filter(ee.Filter.date('2001-01-01', '2015-12-31'));
+var pet = dataset.select('pet').mean().multiply(0.1);
+var pre = dataset.select('pr').mean();
+
+var DI = pre.divide(pet).rename("DI_2001_2015") 
+
+var all = lambda_TS_GPP_MODIS.addBands(DI)
+
+// the GFMD and Hassen forest map and the MODIS forest map
+var GFMD_2015 = ee.Image("users/youzhuo98/forest").rename("Forest_mana_type")
+
+var Hansen_forest_map = ee.Image("UMD/hansen/global_forest_change_2022_v1_10").select("treecover2000") 
+
+var HM_1km = Hansen_forest_map
+.reproject(GFMD_2015.projection())
+.reduceResolution({
+  reducer: ee.Reducer.mean(),
+  maxPixels: 1400,
+  bestEffort: true,
+}).gte(50).unmask(0).rename("Forest_2000");
+//Map.addLayer(HM_1km)
+
+var GFMD_2000 = GFMD_2015.updateMask(HM_1km)
+
+var NFs_2000 = GFMD_2000.eq(11).or(GFMD_2000.eq(20))
+
+var PFs_2000 = GFMD_2000.eq(31)
+
+///////////////////////////export
+var all_NF = all.updateMask(NFs_2000)
+var statistics = all_NF
+.reduceRegions({collection: roi1, reducer: ee.Reducer.mean(), scale: 1000})
+
+var polyOut = statistics.select(['.*'],null,false);
+
+Export.table.toDrive({
+  collection:polyOut,
+  description:'lambda_NF_25_pf31_TS_GPP_MODIS',
+  fileFormat: 'csv'
+});
+
+var all_PF = all.updateMask(PFs_2000)
+
+var statistics = all_PF
+.reduceRegions({collection: roi1, reducer: ee.Reducer.mean(), scale: 1000})
+
+var polyOut = statistics.select(['.*'],null,false);
+
+Export.table.toDrive({
+  collection:polyOut,
+  description:'lambda_PF_25_pf31_TS_GPP_MODIS',
+  fileFormat: 'csv'
+});
+
+
+
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////
+var roi1 = ee.FeatureCollection("projects/ee-yanyu19980602-python/assets/25_pf31"),
+    roi2 = ee.FeatureCollection("projects/ee-yanyu19980602-python/assets/25_pfall")
+// DI
+var dataset = ee.ImageCollection('IDAHO_EPSCOR/TERRACLIMATE')
+                  .filter(ee.Filter.date('2001-01-01', '2015-12-31'));
+var pet = dataset.select('pet').mean().multiply(0.1);
+var pre = dataset.select('pr').mean();
+
+var DI = pre.divide(pet).rename("DI_2001_2015") 
+
+var all = lambda_TS_KNDVI.addBands(DI)
+
+// the GFMD and Hassen forest map and the MODIS forest map
+var GFMD_2015 = ee.Image("users/youzhuo98/forest").rename("Forest_mana_type")
+
+var Hansen_forest_map = ee.Image("UMD/hansen/global_forest_change_2022_v1_10").select("treecover2000") 
+
+var HM_1km = Hansen_forest_map
+.reproject(GFMD_2015.projection())
+.reduceResolution({
+  reducer: ee.Reducer.mean(),
+  maxPixels: 1400,
+  bestEffort: true,
+}).gte(50).unmask(0).rename("Forest_2000");
+//Map.addLayer(HM_1km)
+
+var GFMD_2000 = GFMD_2015.updateMask(HM_1km)
+
+var NFs_2000 = GFMD_2000.eq(11).or(GFMD_2000.eq(20))
+
+var PFs_2000 = GFMD_2000.eq(31)
+
+///////////////////////////export
+var all_NF = all.updateMask(NFs_2000)
+var statistics = all_NF
+.reduceRegions({collection: roi1, reducer: ee.Reducer.mean(), scale: 1000})
+
+var polyOut = statistics.select(['.*'],null,false);
+
+Export.table.toDrive({
+  collection:polyOut,
+  description:'lambda_NF_25_pf31_TS_KNDVI',
+  fileFormat: 'csv'
+});
+
+var all_PF = all.updateMask(PFs_2000)
+
+var statistics = all_PF
+.reduceRegions({collection: roi1, reducer: ee.Reducer.mean(), scale: 1000})
+
+var polyOut = statistics.select(['.*'],null,false);
+
+Export.table.toDrive({
+  collection:polyOut,
+  description:'lambda_PF_25_pf31_TS_KNDVI',
+  fileFormat: 'csv'
+});
+
+
+
+
+
+
+
+
+

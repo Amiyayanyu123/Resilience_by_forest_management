@@ -1,0 +1,371 @@
+var slope = ee.Image("projects/ee-yanyu19980602/assets/AR1_LAI_slope_10km"),
+    all = ee.Image("projects/ee-yanyu19980602/assets/all_forest_gain_loss_2001_2012");
+Export.image.toDrive({
+ image:slope,
+  description: "slope",
+  folder: 'slope', 
+  scale: 10000,
+  maxPixels: 1e13}) 
+
+Export.image.toDrive({
+ image:all,
+  description: "all",
+  folder: 'all', 
+  scale: 10000,
+  maxPixels: 1e13}) 
+//////////////////////////////////////////////////
+var corr = function(joined_collection,band1,band2){
+  var coll=ee.ImageCollection(joined_collection);
+  var corr_img=coll.select([band1, band2])
+  .reduce(ee.Reducer.pearsonsCorrelation());
+  var te=corr_img.select("correlation");
+  var test=te;
+  return test;};
+
+var corp=function(joined_collection,band1,band2){
+  var coll=ee.ImageCollection(joined_collection);
+  var corr_img=coll.select([band1, band2])
+  .reduce(ee.Reducer.pearsonsCorrelation());
+  var te=corr_img.select('p-value');
+  var test=te;
+  return test;};
+  
+  var slope = function(joined_collection,band1,band2){
+  var coll=ee.ImageCollection(joined_collection);
+  var corr_img=coll.select([band1, band2])
+  .reduce(ee.Reducer.robustLinearRegression({numX: 1, numY: 1}));
+  
+  var  bandNames = [[band1], // 0-axis variation.
+                 [band2]];
+                 
+  var te= corr_img.select(['coefficients']).arrayFlatten(bandNames)
+  var test=te;
+  return test;};
+//
+var gain_2001_2012 = ee.Image("UMD/hansen/global_forest_change_2022_v1_10").select("gain").reproject({crs: 'EPSG:4326',
+    scale: 1000})
+.reduceResolution({
+  reducer: ee.Reducer.mean(),
+  maxPixels: 65536,
+  bestEffort: true,
+}).reproject({crs: 'EPSG:4326',
+    scale: 10000})
+.reduceResolution({
+  reducer: ee.Reducer.mean(),
+  maxPixels: 65536,
+  bestEffort: true,
+}).rename("gain_fraction")
+
+var lossyear = ee.Image("UMD/hansen/global_forest_change_2022_v1_10").select("lossyear")
+
+var loss_2001_2012 = lossyear.gte(1).and(lossyear.lte(12)).unmask(0).reproject({crs: 'EPSG:4326',
+    scale: 1000})
+.reduceResolution({
+  reducer: ee.Reducer.mean(),
+  maxPixels: 65536,
+  bestEffort: true,
+}).reproject({crs: 'EPSG:4326',
+    scale: 10000})
+.reduceResolution({
+  reducer: ee.Reducer.mean(),
+  maxPixels: 65536,
+  bestEffort: true,
+}).rename("loss_fraction")
+
+var all = gain_2001_2012.addBands(loss_2001_2012)
+
+Export.image.toAsset({
+  image: all,
+  description: "all",
+   assetId: 'all_forest_gain_loss_2001_2012',  // <> modify these
+  scale: 10000,
+  maxPixels: 1e13
+});
+/////////////////////////////////////
+//
+////////////////////////////////////////////
+var mask_image_bit = function (imagecol,maskband,bit) {
+
+function mask_(image) {
+  // Bits 3 and 5 are cloud shadow and cloud, respectively.
+  var cloudShadowBitMask = (1 << bit);
+  // Get the pixel QA band.
+  var qa = image.select(maskband);
+  // Both flags should be set to zero, indicating clear conditions.
+  var mask = qa.bitwiseAnd(cloudShadowBitMask).eq(0)
+  return image.updateMask(mask);
+}
+
+return imagecol.map(mask_)
+}
+//
+var reproject_mean = function (image){
+var image =  image.reproject({
+    crs: 'EPSG:4326',
+    scale: 10000
+  }) //questions:about the reproject and resample
+return image
+}
+//
+function bitwiseExtract(value, fromBit, toBit) {
+ if (toBit === undefined)
+ toBit = fromBit
+ var maskSize = ee.Number(1).add(toBit).subtract(fromBit)
+ var mask = ee.Number(1).leftShift(maskSize).subtract(1)
+ return value.rightShift(fromBit).bitwiseAnd(mask)
+}
+//
+var stratdate = "2001-01-01"
+var enddate = "2015-12-31"
+
+var NDVI_EVI_1 = ee.ImageCollection("MODIS/061/MOD15A2H").filterDate(stratdate,enddate)
+
+var NDVI_EVI_2 = ee.ImageCollection("MODIS/061/MYD15A2H").filterDate(stratdate,enddate)
+
+var EVI = NDVI_EVI_1.merge(NDVI_EVI_2).map(reproject_mean)
+
+var EVI = EVI.map(function(image){
+var qa = image.select('FparLai_QC')
+var good = bitwiseExtract(qa, 0) // returns 0 for good quality
+return image.updateMask(good.not()) // needs to be inverted to mask pixels with bad quality
+})
+
+print(EVI)
+//////////////////////////////////////
+var rename_new = function(imagecol,odd,newname){
+  
+  var rn = function(image){
+    return image.select(odd).rename(newname)
+  }
+  
+  return imagecol.map(rn)
+}
+
+/////////////////////deseason
+//monthly median datasets
+var startyear = 2001; 
+var endyear = 2015; 
+
+var startmonth = 1;
+var endmonth= 12;
+
+var startdate = ee.Date.fromYMD(startyear, startmonth, 1);
+var enddate = ee.Date.fromYMD(endyear+1 , endmonth, 1);
+var years = ee.List.sequence(startyear, endyear);
+var months = ee.List.sequence(startmonth,endmonth);
+//
+var EVI_MODIS = ee.ImageCollection.fromImages(
+  years.map(function (y) {
+    return months.map(function(m) {
+    // var n=m+1;
+     //print(m)
+      var w = EVI.filter(ee.Filter.calendarRange(y, y, 'year'))
+                    .filter(ee.Filter.calendarRange(m, m, 'month'))
+                    .max().select("Lai_500m").multiply(0.01).rename("LAI");
+      
+      return w.set('year', y)
+              .set('month', m)
+              .set('system:time_start', ee.Date.fromYMD(y, m, 1).millis());
+    });
+  }).flatten()
+);
+
+var LAI_mean = EVI_MODIS.mean()
+
+var EVI_Zscores = EVI_MODIS.map(function(image) {
+  var m = image.get("month")
+  
+  var img_mean = EVI_MODIS.filter(ee.Filter.eq('month', m)).mean()
+  var img_std = EVI_MODIS.filter(ee.Filter.eq('month', m)).reduce(ee.Reducer.stdDev());
+  
+  var img_A = image.subtract(img_mean)
+  var img_Z = img_A.divide(img_std).rename("LAI_Z")
+ 
+  return img_Z.copyProperties(image,['system:time_start','year','month'])
+})
+//////////////////////////////////detrend
+var add_Bands = function(image) {
+  return image.addBands(ee.Image(1).rename("constant")).addBands(image.metadata('system:time_start')
+    .divide(1000 * 60 * 60 * 24 * 365).rename("t")).copyProperties(image,['system:time_start','year','month'])
+}
+
+var detrend = function(imgecol,aimband) {
+var independents = ee.List(['constant', 't']);
+
+// Name of the dependent variable.
+var dependent = ee.String(aimband);
+
+// Compute a linear trend.  This will have two bands: 'residuals' and 
+// a 2x1 band called coefficients (columns are for dependent variables).
+var trend = imgecol.select(independents.add(dependent))
+    .reduce(ee.Reducer.linearRegression(independents.length(), 1));
+// Map.addLayer(trend, {}, 'trend array image');
+
+// Flatten the coefficients into a 2-band image
+var coefficients = trend.select('coefficients')
+  .arrayProject([0])
+  .arrayFlatten([independents]);
+// Compute a de-trended series.
+var detrended = imgecol.map(function(image) {
+  return image.select(dependent).subtract(
+          image.select(independents).multiply(coefficients).reduce('sum'))
+          .rename(dependent)
+          .copyProperties(image,['system:time_start','system:time_end'])
+});
+
+return detrended
+}
+
+var EVI_dese_detr = detrend(EVI_Zscores.map(add_Bands),"LAI_Z")
+print(EVI_dese_detr)
+
+//////////////////////////////////////////////////////////////////////////////////calculated the lambda (vegetation resilience)
+
+var get_lamda = function(ic){
+   
+  var ic = ee.ImageCollection(ic)
+  var  l = ic.toList(ic.size())
+
+  var dt = l.slice(0,l.size().subtract(1))   
+  var dtp1 = l.slice(1,l.size()) 
+    
+  var create_collection = function(i) {
+        var x0 = ee.Image(dt.get(i)).rename('xt').set('system:index', ee.Number(i).format('%s'))
+        var x1 = ee.Image(dtp1.get(i)).rename('xtp1').set('system:index', ee.Number(i).format('%s'))
+        var dx = ee.Image(x1.subtract(x0)).rename('dx').set('system:index', ee.Number(i).format('%s'))
+        var constant = ee.Image(1).rename('constant').set('system:index', ee.Number(i).format('%s'))
+        return constant.addBands(x0).addBands(x1).addBands(dx)
+}  
+  
+ var  seq = ee.List.sequence(0, dt.size().subtract(1)) 
+ var  data = ee.ImageCollection.fromImages(seq.map(create_collection)) 
+    
+  var fit = data.select(['constant', 'xt', 'dx']).reduce(ee.Reducer.linearRegression({numX:2, numY:1}))
+  var slope_kappa = fit.select(['coefficients']).arrayProject([0]).arrayFlatten([['constant', 'trend']]).select('trend')
+  
+  var fit = data.select(['constant', 'xt', 'xtp1']).reduce(ee.Reducer.linearRegression({numX:2, numY:1}))
+  var slope_xt = fit.select(['coefficients']).arrayProject([0]).arrayFlatten([['constant', 'trend']]).select('trend')
+    
+  var kappa_fix = slope_kappa.add(1)
+  var lambda_kappa = kappa_fix.log().rename('lambda_kappa')
+  var lambda_xt = slope_xt.log().rename('lambda_xt')
+  
+  function create_resid_kappa(image){
+        var resid = image.select('dx').subtract(image.select('xt').multiply(slope_kappa)).rename('resid')
+        return resid }
+  
+  var resid_kappa = data.map(create_resid_kappa)
+  var sigma_kappa = resid_kappa.reduce(ee.Reducer.stdDev())
+  
+   function create_resid_xt(image){
+        var resid = image.select('xtp1').subtract(image.select('xt').multiply(slope_xt)).rename('resid')
+        return resid}
+  var resid_xt = data.map(create_resid_xt)
+  var sigma_xt = resid_xt.reduce(ee.Reducer.stdDev())
+  
+  return lambda_xt.addBands(sigma_xt).addBands(slope_xt)
+}
+////////////////////////////////////////////////////////////////
+function get_lt_lambda(ic){
+
+    var result = get_lamda(ic)
+   var  sigma_xt = result.select("resid_stdDev")
+   var  lambda_xt = result.select("lambda_xt")
+   var  lt_var = ic.reduce(ee.Reducer.variance(), 4)
+   var  ex = ee.Image(1).subtract(sigma_xt.pow(2).divide(lt_var)) 
+    var lambda_variance = ex.log().multiply(0.5)
+    return lambda_xt.addBands(lambda_variance)
+}
+var years = ee.List.sequence(2003,2013)
+var windowSize = 2;
+var time_lam = function reduceFits(t){
+  var date = ee.Date.fromYMD(t,1,1);
+  
+  var data = EVI_dese_detr.filterDate(date.advance(-windowSize,'year'),date.advance(windowSize,'year'))
+  
+  var lambda_time = get_lt_lambda(data)
+  
+  return lambda_time.set('system:time_start',date.millis())
+              .set("year", t)
+}
+
+var band = ["AC_2003","Var_2003","AC_2004","Var_2004","AC_2005","Var_2005",
+"AC_2006","Var_2006","AC_2007","Var_2007","AC_2008","Var_2008","AC_2009","Var_2009","AC_2010","Var_2010",
+"AC_2011","Var_2011","AC_2012","Var_2012","AC_2013","Var_2013"]
+
+var lam_LAI_TS = ee.ImageCollection(years.map(time_lam))
+
+var lam_LAI = lam_LAI_TS.toBands().rename(band);
+
+Export.image.toAsset({
+  image: lam_LAI,
+  description: "lam_LAI",
+   assetId: 'PF_NF_lamda_LAI_time_series_25km',  // <> modify these
+  scale: 10000,
+  maxPixels: 1e13
+});
+
+///////////////////////
+var lamda = get_lamda(EVI_dese_detr).select("trend").rename("AR1")
+
+//for the time-series lambda
+var years = ee.List.sequence(2003,2013)
+var windowSize = 2;
+var time_lam = function reduceFits(t){
+  var date = ee.Date.fromYMD(t,1,1);
+  
+  var data = EVI_dese_detr.filterDate(date.advance(-windowSize,'year'),date.advance(windowSize,'year'))
+  
+  var lambda_time = get_lamda(data).select("trend").rename("AR1")
+  
+  return lambda_time.set('system:time_start',date.millis())
+              .set("year", t)
+}
+
+var band = ["AR_2003","AR_2004","AR_2005","AR_2006","AR_2007","AR_2008","AR_2009","AR_2010","AR_2011","AR_2012","AR_2013"]
+
+var lam_LAI_TS = ee.ImageCollection(years.map(time_lam))
+var createYear = function(image) {
+  // Scale milliseconds by a large constant.
+  return image.addBands(image.metadata('year')).copyProperties(image,["system:time_start","year"]);
+};
+
+var lam_LAI_TS = lam_LAI_TS.map(createYear)
+var slope = slope(lam_LAI_TS,"year","AR1").rename("Slope_AR1")
+print(slope)
+Export.image.toAsset({
+  image: slope,
+  description: "AR1_LAI_slope_10km",
+  assetId: 'AR1_LAI_slope_10km',  // <> modify these
+  scale: 10000,
+  maxPixels: 1e13
+});
+
+var lam_LAI = lam_LAI_TS.toBands().rename(band);
+
+
+Export.image.toAsset({
+  image: lam_LAI,
+  description: "lam_LAI_AR1",
+   assetId: 'PF_NF_AR1_LAI_time_series_25km',  // <> modify these
+  scale: 10000,
+  maxPixels: 1e13
+});
+
+//////////////////////////////////////////////////////////////////////////////slope of resilience
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

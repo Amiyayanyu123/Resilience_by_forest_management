@@ -1,0 +1,210 @@
+var biodiversity = ee.Image("projects/ee-yanyu19980602-python/assets/bdi_2017_2020"),
+    LAI = ee.Image("projects/ee-yanyu19980602-python/assets/LAI_mean"),
+    root_depth = ee.Image("projects/ee-yanyu19980602/assets/root_depth"),
+    Temp_AR1 = ee.Image("projects/ee-yanyu19980602-python/assets/Temp_AR1"),
+    Pre_AR1 = ee.Image("projects/ee-yanyu19980602-python/assets/Pre_AR1"),
+    PET_AR1 = ee.Image("projects/ee-yanyu19980602-python/assets/PET_AR1"),
+    DI_AR1 = ee.Image("projects/ee-yanyu19980602-python/assets/DI_AR1");
+var biodiversity = ee.Image("projects/ee-yanyu19980602-python/assets/bdi_2017_2020"),
+    LAI = ee.Image("projects/ee-yanyu19980602-python/assets/LAI_mean"),
+    root_depth = ee.Image("projects/ee-yanyu19980602/assets/root_depth");
+//////////////////////////////////////////////////vegetation
+// SLA (mm2/g)
+var SLA=ee.Image('projects/sat-io/open-datasets/GLOBAL-LEAF-TRAITS/SLA_1km_v3').select([0],['SLA']);
+var SLA_SD = ee.Image('projects/sat-io/open-datasets/GLOBAL-LEAF-TRAITS/SLA_sd_1km_v3').select([0],['SLA_sd']);
+
+// LNC (mg/g)
+var LNC=ee.Image('projects/sat-io/open-datasets/GLOBAL-LEAF-TRAITS/LNC_1km_v3').select([0],['LNC']);
+var LNC_SD = ee.Image('projects/sat-io/open-datasets/GLOBAL-LEAF-TRAITS/LNC_sd_1km_v3').select([0],['LNC_sd']);
+
+// LPC (mg/g)
+var LPC=ee.Image('projects/sat-io/open-datasets/GLOBAL-LEAF-TRAITS/LPC_1km_v3').select([0],['LPC']);
+var LPC_SD=ee.Image('projects/sat-io/open-datasets/GLOBAL-LEAF-TRAITS/LPC_sd_1km_v3').select([0],['LPC_sd']);
+
+// Leaf dry matter content LDMC (g/g)
+var LDMC=ee.Image('projects/sat-io/open-datasets/GLOBAL-LEAF-TRAITS/LDMC_1km_v3').select([0],['LDMC']);
+var LDMC_SD = ee.Image('projects/sat-io/open-datasets/GLOBAL-LEAF-TRAITS/LDMC_sd_1km_v3').select([0],['LDMC_sd']);
+
+//let's mask unprocessed data (Positive values correspond with natural vegetated areas)
+SLA = SLA.mask(SLA.gt(0));
+LNC = LNC.mask(LNC.gt(0));
+LPC = LPC.mask(LPC.gt(0));
+LDMC = LDMC.mask(LDMC.gt(0));
+
+var leaf_trait = SLA.addBands(LNC).addBands(LPC).addBands(LDMC).addBands(root_depth.rename("root_depth"))
+////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////
+var forest_height = ee.Image("NASA/JPL/global_forest_canopy_height_2005").reproject({
+    crs: 'EPSG:4326',
+    scale: 1000
+  }).rename("Height")
+var biomass = ee.ImageCollection("NASA/ORNL/biomass_carbon_density/v1").mean().select(["agb","bgb"]).reproject({
+    crs: 'EPSG:4326',
+    scale: 1000
+  })
+var forest_age = ee.Image("users/youzhuo98/Forest_age").reproject({
+    crs: 'EPSG:4326',
+    scale: 1000
+  })
+  
+var forest = forest_height.addBands(biomass).addBands(biodiversity).addBands(LAI)
+//soil and hydrological
+var isric_clay = ee.Image("projects/soilgrids-isric/clay_mean");
+var isric_sand = ee.Image("projects/soilgrids-isric/sand_mean");
+
+var isric_nitrogen = ee.Image("projects/soilgrids-isric/nitrogen_mean");
+var isric_phh20 = ee.Image("projects/soilgrids-isric/phh2o_mean");
+var isric_soc = ee.Image("projects/soilgrids-isric/soc_mean");
+var isric_cec = ee.Image("projects/soilgrids-isric/cec_mean");
+
+var soil_all =  isric_cec.addBands(isric_clay)
+.addBands(isric_sand).addBands(isric_nitrogen).addBands(isric_phh20)
+.addBands(isric_soc).reproject({
+    crs: 'EPSG:4326',
+    scale: 1000
+  })
+//hydro
+var ksat = ee.ImageCollection("projects/sat-io/open-datasets/HiHydroSoilv2_0/ksat").mean();
+var wcpf2 = ee.ImageCollection("projects/sat-io/open-datasets/HiHydroSoilv2_0/wcpf2").mean();
+var wcsat = ee.ImageCollection("projects/sat-io/open-datasets/HiHydroSoilv2_0/wcsat").mean();
+var wcavail = ee.ImageCollection("projects/sat-io/open-datasets/HiHydroSoilv2_0/wcavail").mean();
+
+var soil_hydro = ksat.addBands(wcpf2).addBands(wcsat).addBands(wcavail)
+
+///////////////
+var all = forest
+.addBands(leaf_trait).addBands(soil_all).addBands(soil_hydro)
+
+// the GFMD and Hassen forest map and the MODIS forest map
+var GFMD_2015 = ee.Image("users/youzhuo98/forest").rename("Forest_mana_type")
+
+var Hansen_forest_map = ee.Image("UMD/hansen/global_forest_change_2022_v1_10").select("treecover2000") 
+
+var HM_1km = Hansen_forest_map
+.reproject(GFMD_2015.projection())
+.reduceResolution({
+  reducer: ee.Reducer.mean(),
+  maxPixels: 1400,
+  bestEffort: true,
+}).gte(50).unmask(0).rename("Forest_2000");
+//Map.addLayer(HM_1km)
+
+var GFMD_2000 = GFMD_2015.updateMask(HM_1km)
+
+var NFs_2000 = GFMD_2000.eq(11).or(GFMD_2000.eq(20))
+
+var PFs_2000 = GFMD_2000.eq(31).or(GFMD_2000.eq(32)).or(GFMD_2000.eq(40)).or(GFMD_2000.eq(53))
+
+///////////////////////////export
+var roi1 = ee.FeatureCollection("projects/ee-yanyu19980602-python/assets/25_pf31")
+var roi2 = ee.FeatureCollection("projects/ee-yanyu19980602-python/assets/25_pfall")
+    
+var all_NF = all.updateMask(NFs_2000)
+var statistics = all_NF
+.reduceRegions({collection: roi2, reducer: ee.Reducer.mean(), scale: 1000})
+
+var polyOut = statistics.select(['.*'],null,false);
+
+Export.table.toDrive({
+  collection:polyOut,
+  description:'vegetation_basic_NF_1',
+  fileFormat: 'csv'
+});
+
+var all_PF = all.updateMask(PFs_2000)
+
+var statistics = all_PF
+.reduceRegions({collection: roi2, reducer: ee.Reducer.mean(), scale: 1000})
+
+var polyOut = statistics.select(['.*'],null,false);
+
+Export.table.toDrive({
+  collection:polyOut,
+  description:'vegetation_basic_PF_1',
+  fileFormat: 'csv'
+});
+
+////////////////////////////////////the presented features in this slide windows
+
+// climate variables
+/////////////////////////////////////////////////////////////Terraclimate
+var Terraclimate = ee.ImageCollection("IDAHO_EPSCOR/TERRACLIMATE").filterDate("2001-01-01","2015-12-31")
+
+var Temp = Terraclimate.map(function(image) {
+  return image.addBands(
+    image.expression('(a1*0.1+b1*0.1)/2', {
+      a1: image.select('tmmn'),
+      b1: image.select('tmmx'),
+    }).rename('Temp'));
+});
+
+var DI = Temp.map(function(image) {
+  return image.addBands(
+    image.expression('a1/(b1*0.1)', {
+      a1: image.select('pr'),
+      b1: image.select('pet'),
+    }).rename('DI'));
+});
+
+var PET = DI.map(function(image) {
+  return image.addBands(
+    image.expression('(b1*0.1)', {
+      b1: image.select('pet'),
+    }).rename('PET'));
+});
+var bandsName_climae = ["pr","Temp","PET","DI"]
+var climate_Terra = PET.select(bandsName_climae)
+
+//
+var startyear = 2001; 
+var endyear = 2015; 
+
+var startmonth = 1;
+var endmonth= 12;
+
+var startdate = ee.Date.fromYMD(startyear, startmonth, 1);
+var enddate = ee.Date.fromYMD(endyear+1 , endmonth, 1);
+var years = ee.List.sequence(startyear, endyear);
+var months = ee.List.sequence(startmonth,endmonth);
+//
+var climate_Terra_month = ee.ImageCollection.fromImages(
+  years.map(function (y) {
+    return months.map(function(m) {
+    // var n=m+1;
+     //print(m)
+      var w = climate_Terra.filter(ee.Filter.calendarRange(y, y, 'year'))
+                    .filter(ee.Filter.calendarRange(m, m, 'month'))
+                    .mean();
+                    
+      return w.set('year', y)
+              .set('month', m)
+              .set('system:time_start', ee.Date.fromYMD(y, m, 1).millis());
+    });
+  }).flatten()
+);
+//
+var Pre_mean = climate_Terra_month.select("pr").mean()
+var PET_mean = climate_Terra_month.select("PET").mean()
+var DI_mean = climate_Terra_month.select("DI").mean()
+var Temp_mean = climate_Terra_month.select("Temp").mean()
+
+var all_climate = Pre_mean.addBands(PET_mean).addBands(DI_mean).addBands(Temp_mean).addBands(LAI)
+
+print(all_climate)
+var statistics = all_climate
+.reduceRegions({collection: roi2, reducer: ee.Reducer.mean(), scale: 1000})
+
+var polyOut = statistics.select(['.*'],null,false);
+
+Export.table.toDrive({
+  collection:polyOut,
+  description:'basic_for_all_pfaall',
+  fileFormat: 'csv'
+});
+
+
+
+
+
+
+

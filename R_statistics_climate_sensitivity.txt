@@ -1,0 +1,310 @@
+library(tidyverse)
+library(ggpmisc)
+library(ggpubr)
+##################simple compare Figure 1a
+se <- function(x, na.rm=FALSE) {
+  if (na.rm) x <- na.omit(x)
+  sqrt(var(x)/length(x))
+}
+
+setwd("I:\\PF_NF_climate_sensitivity\\all_datasets_reproduce\\climate_sensi")
+
+PF = read.table("sensi_PF_25_pf31.csv",header=T, na.strings = "NA", sep=",") 
+
+NF = read.table("sensi_NF_25_pf31.csv",header=T, na.strings = "NA", sep=",") 
+
+DI = (PF$DI_2001_2015 + NF$DI_2001_2015)/2
+
+data_forest = cbind(PF$ID,DI,PF[,3:27] - NF[,3:27]) %>% as.data.frame() 
+
+class_DI <- function(x) {
+  cut(x, breaks=c(0,1,1.5,2,Inf), 
+      labels=c("0<P/PET≤1","1<P/PET≤1.5","1.5<P/PET≤2","P/PET>2"), include.lowest=TRUE)
+}
+
+data_forest$Climate <- sapply(data_forest$DI, class_DI) 
+
+data_forest = data_forest %>% dplyr::select(-DI) %>% reshape2::melt(id = c("Climate","PF$ID"))
+
+multiply_figure = data_forest %>% group_by(Climate,variable) %>% summarise(median = median(value,na.rm = T),
+                                                                           mean = mean(value,na.rm = T),
+                                                                           Q75 = quantile(value,probs = 0.75,na.rm = T),
+                                                                           Q25 = quantile(value,probs = 0.25,na.rm = T),
+                                                                           se = se(value,na.rm = T),
+                                                                           p_value = wilcox.test(value, mu = 0)$p.value) %>% 
+  separate(variable, into = c("Aim", "Index","Z"), sep = "_")
+
+sub_figure = multiply_figure %>% group_by(Climate,Aim) %>% 
+  summarise(mean = (mean(mean,na.rm = T) + mean(median,na.rm = T))/2)
+
+
+A = ggplot(data = multiply_figure,aes(x = Climate,y= mean,fill = Index))+
+  geom_bar(stat="identity", position=position_dodge()) +
+  geom_errorbar(aes(ymin=mean-2*se, ymax=mean+2*se), width=.2,
+                position=position_dodge(.9))+
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black",size = 1.2)+
+  labs(x="", y = "Sensitivity difference (PF - NF)")+scale_color_manual(values=c("#9E765E","#5CA0D3","#2E3B4E","#E4975A","#548C5E"))+
+  scale_fill_manual(values=c("#9E765E","#5CA0D3","#2E3B4E","#E4975A","#548C5E"))+
+  theme_bw()+theme(axis.text = element_text(face="plain",color="black", size=12),
+                   axis.title=element_text(size=12,face="bold",color="black") ,
+                   axis.text.x = element_text(angle = 20),
+                   legend.position="none")+
+  facet_wrap(~Aim,scales = "free")+geom_text(
+    aes(label = ifelse(p_value < 0.05, "*", "NS")),
+    position = position_dodge(width = 1),
+    vjust = -1.5,
+    size = 3
+  )
+########no climate zones
+setwd("I:\\PF_NF_climate_sensitivity\\all_datasets_reproduce\\climate_sensi")
+
+PF = read.table("sensi_PF_25_pf31.csv",header=T, na.strings = "NA", sep=",") 
+
+NF = read.table("sensi_NF_25_pf31.csv",header=T, na.strings = "NA", sep=",") 
+
+DI = (PF$DI_2001_2015 + NF$DI_2001_2015)/2
+
+data_forest = cbind(PF$ID,DI,PF[,3:27] - NF[,3:27]) %>% as.data.frame() 
+
+data_forest = data_forest %>% dplyr::select(-DI) %>% reshape2::melt(id = c("PF$ID"))
+
+multiply_figure = data_forest %>% group_by(variable) %>% summarise(median = median(value,na.rm = T),
+                                                                           mean = mean(value,na.rm = T),
+                                                                           Q75 = quantile(value,probs = 0.75,na.rm = T),
+                                                                           Q25 = quantile(value,probs = 0.25,na.rm = T),
+                                                                           se = se(value,na.rm = T),
+                                                                           p_value = wilcox.test(value, mu = 0)$p.value) %>% 
+  separate(variable, into = c("Aim", "Index","Z"), sep = "_")
+
+
+ggplot(data = multiply_figure,aes(x = Aim,y= mean,fill = Index))+
+  geom_bar(stat="identity", position=position_dodge()) +
+  geom_errorbar(aes(ymin=mean-2*se, ymax=mean+2*se), width=.2,
+                position=position_dodge(.9))+
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black",size = 1.2)+
+  labs(x="", y = "Sensitivity difference (PF - NF)")+scale_color_manual(values=c("#9E765E","#5CA0D3","#2E3B4E","#E4975A","#548C5E"))+
+  scale_fill_manual(values=c("#9E765E","#5CA0D3","#2E3B4E","#E4975A","#548C5E"))+
+  theme_bw()+theme(axis.text = element_text(face="plain",color="black", size=12),
+                   axis.title=element_text(size=12,face="bold",color="black") ,
+                   axis.text.x = element_text(angle = 20),
+                   legend.position="none")+geom_text(
+    aes(label = ifelse(p_value < 0.05, "*", "NS")),
+    position = position_dodge(width = 1),
+    vjust = -1.5,
+    size = 3
+  )
+
+
+
+
+
+
+
+
+
+
+
+
+###############################################################Figure compare the PF and NF by error bar
+se <- function(x, na.rm=FALSE) {
+  if (na.rm) x <- na.omit(x)
+  sqrt(var(x)/length(x))
+}
+
+setwd("I:\\PF_NF_climate_sensitivity\\all_datasets_reproduce\\climate_sensi")
+
+PF = read.table("sensi_PF_25_pf31.csv",header=T, na.strings = "NA", sep=",") 
+
+NF = read.table("sensi_NF_25_pf31.csv",header=T, na.strings = "NA", sep=",") 
+
+DI = (PF$DI_2001_2015 + NF$DI_2001_2015)/2
+
+data_forest = cbind(PF$ID,DI,PF[,3:27]) %>% as.data.frame() 
+
+data_forest$Climate <- sapply(data_forest$DI, class_DI) 
+
+data_forest = data_forest %>% select(-DI) %>% reshape2::melt(id = c("Climate","PF$ID"))
+
+multiply_figure_PF = data_forest %>% group_by(Climate,variable) %>% summarise(mean = mean(value,na.rm = T),
+                                                                              median = median(value,na.rm = T),
+                                                                              sd = sd(value,na.rm = T)) %>% 
+  separate(variable, into = c("Aim", "Index","Z"), sep = "_") %>% transform(ID = "PF")
+
+setwd("I:\\PF_NF_climate_sensitivity\\all_datasets_reproduce\\climate_sensi")
+
+PF = read.table("sensi_PF_25_pf31.csv",header=T, na.strings = "NA", sep=",") 
+
+NF = read.table("sensi_NF_25_pf31.csv",header=T, na.strings = "NA", sep=",") 
+
+DI = (PF$DI_2001_2015 + NF$DI_2001_2015)/2
+
+data_forest = cbind(PF$ID,DI,NF[,3:27]) %>% as.data.frame() 
+
+data_forest$Climate <- sapply(data_forest$DI, class_DI) 
+
+data_forest = data_forest %>% select(-DI) %>% reshape2::melt(id = c("Climate","PF$ID"))
+
+multiply_figure_NF = data_forest %>% group_by(Climate,variable) %>% summarise(mean = mean(value,na.rm = T),
+                                                                              median = median(value,na.rm = T),
+                                                                              sd = sd(value,na.rm = T)) %>% 
+  separate(variable, into = c("Aim", "Index","Z"), sep = "_") %>% transform(ID = "NF")
+
+multiply_figure = rbind(multiply_figure_PF,multiply_figure_NF)
+
+B = ggplot(data = multiply_figure,aes(x = Climate,y= median))+
+  geom_point(data = multiply_figure %>% dplyr::filter(ID %in% "PF"),aes(color = Index),shape = 0,position=position_dodge(width = 0.5),size = 2,stroke = 1.1)+
+  geom_point(data = multiply_figure %>% dplyr::filter(ID %in% "NF"),aes(color = Index),shape = 3,position=position_dodge(width = 0.5),size = 2,stroke = 1.1)+
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black",size = 1.2)+
+  labs(x="", y = "Sensitivity")+scale_color_manual(values=c("#9E765E","#5CA0D3","#2E3B4E","#E4975A","#548C5E"))+
+  theme_bw()+theme(axis.text = element_text(face="plain",color="black", size=12),
+                   axis.title=element_text(size=12,face="bold",color="black") ,
+                   axis.text.x = element_text(angle = 20),
+                   legend.position="none")+
+  facet_wrap(~Aim,scales = "free")
+
+ggarrange(A,B,nrow = 2)
+
+
+###################raster to points
+
+
+
+library(raster)
+library(lubridate)
+library(tidyverse)
+library(ggpmisc)
+library(ggpubr)
+#
+tempdir <- function() "D:\\temp_data"# 修改为d盘路径
+unlockBinding("tempdir", baseenv())
+utils::assignInNamespace("tempdir", tempdir, ns="base", envir=baseenv())
+assign("tempdir", tempdir, baseenv())
+lockBinding("tempdir", baseenv())
+
+#
+setwd("I:\\PF_NF_climate_sensitivity\\all_datasets_reproduce\\climate_sensi\\analysis")
+
+NF <- stack("SM_LAI_Z.tif")
+
+DI <- stack("DI.tif")
+
+
+multi_frame <-
+  as.data.frame(DI , xy = TRUE) %>%
+  na.omit() %>% mutate(across(c(x, y), round, digits = 3))
+
+multi_frame$PDSI_NF = raster::extract(NF ,multi_frame[,1:2])
+
+multi_frame = multi_frame %>% na.omit()
+colnames(multi_frame) = c("x","y","DI_2001_2015","PDSI_NF")
+
+se <- function(x, na.rm=FALSE) {
+  if (na.rm) x <- na.omit(x)
+  sqrt(var(x)/length(x))
+}
+
+statis_plot_1 = multi_frame %>% na.omit() %>%
+  mutate(bin_LAI = cut(DI_2001_2015, breaks = quantile(DI_2001_2015, probs = seq(0, 1, by = 0.1), na.rm = TRUE))) %>% 
+  group_by(bin_LAI) %>% 
+  summarise(median_vege = median(DI_2001_2015, na.rm = TRUE),
+            Q25_vege = quantile(DI_2001_2015,probs = 0.25, na.rm = TRUE),
+            Q75_vege = quantile(DI_2001_2015,probs = 0.75, na.rm = TRUE) )  %>% na.omit() 
+
+statis_plot_2 = multi_frame %>% na.omit() %>%
+  mutate(bin_LAI_1 = cut(DI_2001_2015, breaks = quantile(DI_2001_2015, probs = seq(0, 1, by = 0.1), na.rm = TRUE))) %>% 
+  group_by(bin_LAI_1) %>% 
+  summarise(median_cli = median(PDSI_NF, na.rm = TRUE),
+            Q25_cli = quantile(PDSI_NF,probs = 0.25, na.rm = TRUE),
+            Q75_cli = quantile(PDSI_NF,probs = 0.75, na.rm = TRUE) ) %>% na.omit() 
+
+statis_plot = cbind(statis_plot_1,statis_plot_2) %>% as.data.frame()
+
+
+A = ggplot(statis_plot, aes(x = median_vege, y = median_cli)) +
+  geom_errorbar(data = statis_plot,aes(x= median_vege, y= median_cli, ymin=Q25_cli, ymax=Q75_cli), width=0,size=0.5, 
+                position=position_dodge(0.8))+geom_errorbarh(aes(xmin=Q25_vege, xmax=Q75_vege),size=0.5)+geom_point(size = 3)+
+  geom_smooth(method = "lm", formula = y ~ log(x),color = "red",linetype = "dashed") +
+  labs(x="P/PET", y = "LAI sensitivity to SM") +
+  stat_poly_eq(formula = y ~ log(x),aes(label = paste( ..rr.label.., sep = "~~~")), 
+               parse=TRUE,label.y.npc = "bottom",label.x.npc = "right",size = 6)+
+  theme(axis.title=element_text(size=14,face="bold",color="black"),
+        axis.text = element_text(size=14,face="plain",color="black"),
+        panel.background=element_rect(colour="black",fill=NA),
+        panel.grid.minor=element_blank(),
+        text=element_text(size=14),
+        legend.position="right",
+        legend.text = element_text(size=14
+        ),legend.background=element_rect(colour=NA,fill=NA),
+        axis.ticks=element_line(colour="black"))
+
+#
+setwd("I:\\PF_NF_climate_sensitivity\\all_datasets_reproduce\\climate_sensi\\analysis")
+
+NF <- stack("PET_LAI_Z.tif")
+
+DI <- stack("DI.tif")
+
+
+multi_frame <-
+  as.data.frame(DI , xy = TRUE) %>%
+  na.omit() %>% mutate(across(c(x, y), round, digits = 3))
+
+multi_frame$PDSI_NF = raster::extract(NF ,multi_frame[,1:2])
+
+multi_frame = multi_frame %>% na.omit()
+colnames(multi_frame) = c("x","y","DI_2001_2015","PDSI_NF")
+
+se <- function(x, na.rm=FALSE) {
+  if (na.rm) x <- na.omit(x)
+  sqrt(var(x)/length(x))
+}
+
+statis_plot_1 = multi_frame %>% na.omit() %>%
+  mutate(bin_LAI = cut(DI_2001_2015, breaks = quantile(DI_2001_2015, probs = seq(0, 1, by = 0.1), na.rm = TRUE))) %>% 
+  group_by(bin_LAI) %>% 
+  summarise(median_vege = median(DI_2001_2015, na.rm = TRUE),
+            Q25_vege = quantile(DI_2001_2015,probs = 0.25, na.rm = TRUE),
+            Q75_vege = quantile(DI_2001_2015,probs = 0.75, na.rm = TRUE) )  %>% na.omit() 
+
+statis_plot_2 = multi_frame %>% na.omit() %>%
+  mutate(bin_LAI_1 = cut(DI_2001_2015, breaks = quantile(DI_2001_2015, probs = seq(0, 1, by = 0.1), na.rm = TRUE))) %>% 
+  group_by(bin_LAI_1) %>% 
+  summarise(median_cli = median(PDSI_NF, na.rm = TRUE),
+            Q25_cli = quantile(PDSI_NF,probs = 0.25, na.rm = TRUE),
+            Q75_cli = quantile(PDSI_NF,probs = 0.75, na.rm = TRUE) ) %>% na.omit() 
+
+statis_plot = cbind(statis_plot_1,statis_plot_2) %>% as.data.frame()
+
+
+B = ggplot(statis_plot, aes(x = median_vege, y = median_cli)) +
+  geom_errorbar(data = statis_plot,aes(x= median_vege, y= median_cli, ymin=Q25_cli, ymax=Q75_cli), width=0,size=0.5, 
+                position=position_dodge(0.8))+geom_errorbarh(aes(xmin=Q25_vege, xmax=Q75_vege),size=0.5)+geom_point(size = 3)+
+  geom_smooth(method = "lm", formula = y ~ log(x),color = "red",linetype = "dashed") +
+  labs(x="P/PET", y = "LAI sensitivity to PET") +
+  stat_poly_eq(formula = y ~ log(x),aes(label = paste( ..rr.label.., sep = "~~~")), 
+               parse=TRUE,label.y.npc = "bottom",label.x.npc = "right",size = 6)+
+  theme(axis.title=element_text(size=14,face="bold",color="black"),
+        axis.text = element_text(size=14,face="plain",color="black"),
+        panel.background=element_rect(colour="black",fill=NA),
+        panel.grid.minor=element_blank(),
+        text=element_text(size=14),
+        legend.position="right",
+        legend.text = element_text(size=14
+        ),legend.background=element_rect(colour=NA,fill=NA),
+        axis.ticks=element_line(colour="black"))
+
+
+ggarrange(A,B,ncol = 2)
+
+
+
+
+
+
+
+
+
+
+
+
+

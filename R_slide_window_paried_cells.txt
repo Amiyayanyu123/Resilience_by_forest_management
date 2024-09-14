@@ -1,0 +1,97 @@
+#10.27 ---------------------------------------------------
+#滑动窗口--------------------------------------------------
+library(raster)
+library(magrittr)
+library(sf)
+library(rgdal)
+library(rgeos)
+setwd('F:/slide_window_PF_NF/')  # 当前路径
+# 三层数据 
+#1. 第一层：GMFD2000
+GMFD <- raster('./Data/GFMD_2000.tif') 
+# 获取栅格的行数和列数
+nrows <- nrow(GMFD)
+ncols <- ncol(GMFD)
+lon <- seq(-180,180,by=0.008983153)   
+lat <- seq(-90,90,by=0.008983153)
+#2. 第二层：DEM
+DEM <- raster("./Data/new.tif") 
+# 将DEM重采样为相同网格
+r <- raster(nrow=nrows,ncol=ncols )
+
+#DEM2 <- resample(r,DEM,method='bilinear')
+
+DEM <- resample(DEM,r,method='bilinear')
+#3. 第三层：age
+age1 <- raster('./Data/Forest_age-0000000000-0000000000.tif')
+age2 <- raster('./Data/Forest_age-0000000000-0000032768.tif')
+#合并两个age栅格
+age <- merge(age1,age2)
+rm(list=c('age1','age2'));gc()
+# 生成示例栅格数据，假设为全球raster
+#set.seed(123)  # 设置随机种子以便生成可重复的随机数据
+#r <- raster(matrix(runif(100), 10, 10)*1000)  # 示例数据，实际数据需要替换
+# 定义窗口大小和重叠率
+window_size <- 45   # 35  25 
+
+window <- window_size*window_size
+overlap_rate <- 0.5
+
+# 计算重叠部分大小
+overlap_size <- floor(window_size * overlap_rate)
+# 存储符合条件的窗口坐标
+count <- 0
+r2p <- list()
+for (i in seq(1, nrows - window_size + 1, by = overlap_size)) {
+  for (j in seq(1, ncols - window_size + 1, by = overlap_size)) {
+    # 获取窗口内的子栅格,15*15
+    ext <- extent(lon[j], lon[j + window_size-1], lat[i], lat[i + window_size-1])
+    sub_gmfd <- crop(GMFD, ext )
+    sub_dem <- crop(DEM, ext )
+    sub_age <- crop(age, ext )
+   # gmfdpoint <- rasterToPoints(sub_gmfd,spatial=T) %>% st_as_sf  %>% as.data.frame() # to point 
+   # demdpoint <- rasterToPoints(sub_dem,spatial=T) %>% st_as_sf  %>% as.data.frame() # to point 
+    #agedpoint <- rasterToPoints( sub_age,spatial=T) %>% st_as_sf %>% as.data.frame() # to point 
+    # 去除NA值
+    if(sum(!is.na(values(sub_gmfd))) >0 &  sum(!is.na(values(sub_dem)))>0 & sum(!is.na(values( sub_age)))>0 ){
+      # 统计窗口内符合条件的坐标
+      nn <- which(values(sub_gmfd)==11 | values(sub_gmfd)==20)
+      
+     # pn <- which(values(sub_gmfd)==31 | values(sub_gmfd)==32 |
+                   # values(sub_gmfd)==40 | values(sub_gmfd)==53 )  #31 
+      pn <- which(values(sub_gmfd)==31 )  #31 
+      if( length(nn)/window > 0.2  &  length(pn)/window > 0.2  ){    
+        
+        dn <-  abs( mean(sub_dem[nn],na.rm=T)-mean(sub_dem[pn],na.rm=T) )  
+        ifelse(is.na(dn),dn <- 9999,dn <- dn)
+        di <-  abs( mean(sub_age[nn],na.rm=T)-mean(sub_age[pn],na.rm=T) )
+        ifelse(is.na(di),di <- 9999,di <- di)
+        if(  di < 10 & dn < 500 ){   # age 和 dem 阈值
+          count <- count+1
+          a <- rasterToPolygons(sub_gmfd )
+          runcell <- ext[4]- ext[3]
+          r_re <- raster(xmn = ext[1],
+                            xmx = ext[2] ,
+                            ymn = ext[3],
+                            ymx = ext[4] , crs=crs(sub_dem), res=runcell)  #raster
+          
+          r2p[[count]] <- rasterToPolygons(r_re )
+          }  #  select2
+          }  #  select1
+
+    }  #NA 
+  } #j
+}#i
+
+l <- length(r2p)
+windowr <- r2p[[1]]
+for (x in 2:l) {
+  windowr <- rbind(windowr,r2p[[x]])
+}
+#load('F:/slide_window_PF_NF/result/45all_window.RData')
+#save(windowr ,file = paste0('./result/',window_size,'all_window.RData'))
+td=paste0('./result/',window_size,'_pfall')
+dir.create(td)
+writeOGR(windowr,td,layer="25_pfall",driver="ESRI Shapefile")  
+
+#3. 第三层：age
